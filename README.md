@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Roary Demo Shop
 
-## Getting Started
+A tiny Next.js shop (product list, cart, checkout) that [Roary](https://github.com/scarranca/roary) watches during the demo. It's instrumented with Sentry and PostHog. A separate branch contains a realistic bug, so we can break checkout live and Roary can triage and fix it.
 
-First, run the development server:
+- `main` is **correct**.
+- `demo/break-checkout` has **one commit** that breaks checkout for single-item carts.
+
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+nvm use        # Node 24
+npm install
+npm run dev    # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Every variable is optional. With none set, the app builds and runs, and Sentry and PostHog do nothing.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SENTRY_DSN` | client + server | Sentry DSN (browser errors; also used on the server as a fallback) |
+| `SENTRY_DSN` | server | Sentry DSN for route handlers / server errors (can be the same DSN) |
+| `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` | build | Optional: uploads source maps for readable stack traces |
+| `NEXT_PUBLIC_POSTHOG_KEY` | client | PostHog project API key (`phc_...`) |
+| `NEXT_PUBLIC_POSTHOG_HOST` | client | `https://us.i.posthog.com` (or `https://eu.i.posthog.com`) |
 
-## Learn More
+What gets tracked:
+- **PostHog:** `$pageview`, `add_to_cart`, `checkout_clicked`, `checkout_completed`, `checkout_failed`. Each visitor gets PostHog's anonymous distinct id.
+- **Sentry:** client errors, plus server errors from `/api/checkout` (via `onRequestError` in `instrumentation.ts`). The Sentry user id is the visitor's PostHog distinct id, so the two tools agree on "affected users".
 
-To learn more about Next.js, take a look at the following resources:
+## Break it (demo)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+git merge demo/break-checkout && git push   # or open a PR from demo/break-checkout and merge it
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The commit "Add bundle discount for multi-item carts" changes `lib/checkout.ts` so it reads `lines[1]` without checking that it exists:
 
-## Deploy on Vercel
+```ts
+const bundleDiscount = Math.round(lines[1].lineTotal * BUNDLE_DISCOUNT_RATE);
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Any checkout with a single product now throws `TypeError: Cannot read properties of undefined (reading 'lineTotal')` in `POST /api/checkout`. The request returns a 500, Sentry records the error, and PostHog logs `checkout_failed`. Carts with two or more products still work, so the bug looks like a real one.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Expected fix:** apply the discount only when `lines.length >= 2` (e.g. `lines.length >= 2 ? ... : 0`), and add a test for a single-item cart.
+
+To reset after the demo: `git revert` the merge, or force-reset `main` to the commit before it.
+
+## Generate traffic
+
+```bash
+BASE_URL=https://roary-demo-shop.vercel.app \
+NEXT_PUBLIC_POSTHOG_KEY=phc_xxx NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com \
+npx tsx scripts/traffic.ts 42
+```
+
+The script simulates N visitors. Each one loads the page, adds 1 to 3 products to the cart (about 60% add a single product), and clicks checkout. The checkout request hits the real API, so server errors reach Sentry through the app. The script also sends the matching PostHog events, using the same distinct id for each visitor. Without a PostHog key it only generates real HTTP traffic.

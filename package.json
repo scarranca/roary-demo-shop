@@ -9,7 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@sentry/nextjs": "^11.7.0",
     "next": "16.4.1",
+    "posthog-js": "^1.438.10",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -21,6 +23,10 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }
