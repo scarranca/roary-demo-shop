@@ -32,7 +32,7 @@ export function priceCart(items: CartItem[]): Order {
   });
 
   const subtotal = lines.reduce((sum, l) => sum + l.lineTotal, 0);
-  const bundleDiscount = Math.round(lines[1].lineTotal * BUNDLE_DISCOUNT_RATE);
+  const bundleDiscount = lines.length > 1 ? Math.round(lines[1].lineTotal * BUNDLE_DISCOUNT_RATE) : 0;
   const shipping = subtotal - bundleDiscount >= FREE_SHIPPING_OVER ? 0 : SHIPPING_FLAT;
   return { lines, subtotal, bundleDiscount, shipping, total: subtotal - bundleDiscount + shipping };
 }
